@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard Financeiro - Vendas</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="aurora"></div>
+
+    <main class="dashboard-shell">
+      <section class="dashboard">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Painel de vendas</p>
+            <h1>Dashboard Financeiro</h1>
+          </div>
+
+          <div class="topbar-actions">
+            <span id="api-status" class="status-pill">● CONECTANDO</span>
+            <div id="live-clock" class="clock">--:--</div>
+          </div>
+        </header>
+
+        <section class="metrics-grid">
+          <article class="metric-card metric-blue">
+            <p class="card-label">Total Vendido Hoje</p>
+            <p id="card-total-vendido" class="card-value">Carregando...</p>
+            <p class="card-trend">Atualização em tempo real</p>
+          </article>
+
+          <article class="metric-card metric-red">
+            <p class="card-label">Horário de Pico</p>
+            <p id="card-horario-pico" class="card-value">Carregando...</p>
+            <p id="card-horario-pico-sub" class="card-subtext">Aguardando dados</p>
+          </article>
+
+          <article class="metric-card metric-light">
+            <p class="card-label">Transações</p>
+            <p id="card-transacoes" class="card-value dark">Carregando...</p>
+            <p class="card-subtext dark">realizadas hoje</p>
+          </article>
+
+          <article class="metric-card metric-dark">
+            <p class="card-label">Vendas do Mês</p>
+            <p id="card-ticket-medio" class="card-value cyan">Carregando...</p>
+            <p id="card-mes-anterior" class="card-subtext">Carregando...</p>
+          </article>
+        </section>
+
+        <section class="charts-grid">
+            <section class="chart-card sales-chart-card">
+            <div class="chart-header">
+              <div>
+                <h2>Receita por Hora</h2>
+                <p>Variação em tempo real</p>
+              </div>
+
+              <div class="chart-actions">
+                <span class="dot blue"></span>
+                <span class="dot red"></span>
+                <span class="dot white"></span>
+              </div>
+            </div>
+
+            <div id="sales-chart"></div>
+          </section>
+
+          <section class="chart-card company-chart-card">
+            <div class="chart-header">
+              <div>
+                <h2>Faturamento por Loja</h2>
+                <p>Total vendido hoje</p>
+              </div>
+            </div>
+
+            <div id="company-chart"></div>
+          </section>
+
+          <section class="chart-card company-chart-card">
+            <div class="chart-header">
+              <div>
+                <h2>Faturamento Acumulado do Mês</h2>
+                <p>Vendas do mês por loja</p>
+              </div>
+            </div>
+
+            <div id="company-month-chart"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="app.js?v=10s"></script>
+  </body>
+</html>
