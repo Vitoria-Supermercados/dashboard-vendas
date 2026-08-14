@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import signal
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -39,6 +40,7 @@ DATABASE = os.getenv("DB_NAME", "VITORIA")
 USERNAME = os.getenv("DB_USER", "vitoria")
 PASSWORD = os.getenv("DB_PASSWORD", "")
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "cache_vendas.json")
+CACHE_TTL_SECONDS = 15
 TTL_SECONDS = 0
 EMPRESAS = {
     3: "Torquato",
@@ -110,8 +112,19 @@ def load_cache() -> dict[str, Any] | None:
 
 
 def save_cache(payload: dict[str, Any]) -> None:
+    payload["cached_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
+
+
+def cache_is_fresh() -> bool:
+    if not os.path.exists(CACHE_FILE):
+        return False
+    try:
+        age_seconds = time.time() - os.path.getmtime(CACHE_FILE)
+        return age_seconds <= CACHE_TTL_SECONDS
+    except OSError:
+        return False
 
 
 def build_empty_payload() -> dict[str, Any]:
@@ -169,7 +182,12 @@ def cache_vendas():
 def dashboard():
     if request.method == "OPTIONS":
         return "", 200
+
     cache = load_cache()
+    if cache and cache_is_fresh():
+        cache["status"] = "cache"
+        cache["message"] = "Dados em cache: atualizado há menos de 15 segundos."
+        return jsonify(cache)
 
     if ibm_db is None:
         payload = build_empty_payload()
