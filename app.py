@@ -224,26 +224,30 @@ def dashboard():
 
     try:
         hoje = datetime.now().date()
-    ontem = hoje - timedelta(days=1)
-    dt_ini_1 = datetime.combine(hoje, datetime.min.time())
-    dt_fim_1 = datetime.combine(hoje + timedelta(days=1), datetime.min.time())
-    dt_ini_2 = datetime.combine(ontem, datetime.min.time())
-    dt_fim_2 = datetime.combine(ontem + timedelta(days=1), datetime.min.time())
+        ontem = hoje - timedelta(days=1)
+        dt_ini_1 = datetime.combine(hoje, datetime.min.time())
+        dt_fim_1 = datetime.combine(hoje + timedelta(days=1), datetime.min.time())
+        dt_ini_2 = datetime.combine(ontem, datetime.min.time())
+        dt_fim_2 = datetime.combine(ontem + timedelta(days=1), datetime.min.time())
 
-    dt_inicio_mes = datetime.combine(hoje.replace(day=1), datetime.min.time())
-    if hoje.month == 12:
-        dt_inicio_proximo_mes = datetime.combine(hoje.replace(year=hoje.year + 1, month=1, day=1), datetime.min.time())
-    else:
-        dt_inicio_proximo_mes = datetime.combine(hoje.replace(month=hoje.month + 1, day=1), datetime.min.time())
+        dt_inicio_mes = datetime.combine(hoje.replace(day=1), datetime.min.time())
+        if hoje.month == 12:
+            dt_inicio_proximo_mes = datetime.combine(hoje.replace(year=hoje.year + 1, month=1, day=1), datetime.min.time())
+        else:
+            dt_inicio_proximo_mes = datetime.combine(hoje.replace(month=hoje.month + 1, day=1), datetime.min.time())
 
-    if hoje.month == 1:
-        dt_inicio_mes_anterior = datetime.combine(
-            hoje.replace(year=hoje.year - 1, month=12, day=1), datetime.min.time()
-        )
-    else:
-        dt_inicio_mes_anterior = datetime.combine(
-            hoje.replace(month=hoje.month - 1, day=1), datetime.min.time()
-        )
+        if hoje.month == 1:
+            dt_inicio_mes_anterior = datetime.combine(
+                hoje.replace(year=hoje.year - 1, month=12, day=1), datetime.min.time()
+            )
+        else:
+            dt_inicio_mes_anterior = datetime.combine(
+                hoje.replace(month=hoje.month - 1, day=1), datetime.min.time()
+            )
+    except Exception as exc:
+        REFRESH_IN_PROGRESS = False
+        logger.exception("Erro ao preparar datas do dashboard: %s", exc)
+        return jsonify(build_error_payload(f"Erro ao preparar datas do dashboard: {exc}"))
 
     sql_vendas = """
     SELECT TMP.HORA, SUM(TMP.TOTALVENDA) AS TOTALVENDA,
