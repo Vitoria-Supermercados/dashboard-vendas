@@ -179,37 +179,33 @@ def cache_vendas():
     return send_file(os.path.join(os.path.dirname(__file__), "cache_vendas.json"), mimetype="application/json")
 
 
-@app.route("/api/dashboard")
-def dashboard():
-    if request.method == "OPTIONS":
-        return "", 200
-
+def refresh_dashboard_cache_once() -> dict[str, Any]:
     global REFRESH_IN_PROGRESS
 
     cache = load_cache()
+
     if cache and cache_is_fresh():
         cache["status"] = "cache"
-        cache["message"] = "Dados em cache: atualizado há menos de 30 segundos."
-        return jsonify(cache)
+        cache["message"] = "Dados em cache: atualizado há menos de 10 segundos."
+        return cache
 
     if REFRESH_IN_PROGRESS:
         if cache:
             cache["status"] = "cache"
             cache["message"] = "Atualização já em andamento; servindo cache anterior."
-            return jsonify(cache)
-        return jsonify(build_empty_payload())
+            return cache
+        return build_empty_payload()
 
     if ibm_db is None:
         payload = build_empty_payload()
         payload["message"] = f"Driver IBM DB2 indisponível: {IBM_DB_IMPORT_ERROR}" if IBM_DB_IMPORT_ERROR else "Driver IBM DB2 indisponível."
         if cache:
             cache["status"] = "cache"
-            return jsonify(cache)
-        return jsonify(payload)
+            return cache
+        return payload
 
     REFRESH_IN_PROGRESS = True
     try:
-        # Tenta conectar ao DB2 com timeout de 10 segundos
         conn_str = f"DATABASE={DATABASE};HOSTNAME={HOST};PORT={PORT};PROTOCOL=TCPIP;UID={USERNAME};PWD={PASSWORD};"
         conn = connect_db_with_timeout(conn_str, timeout_seconds=10)
     except Exception as exc:
@@ -219,8 +215,8 @@ def dashboard():
         if cache:
             cache["status"] = "cache"
             cache["message"] = message
-            return jsonify(cache)
-        return jsonify(build_error_payload(message))
+            return cache
+        return build_error_payload(message)
 
     try:
         hoje = datetime.now().date()
@@ -244,93 +240,88 @@ def dashboard():
             dt_inicio_mes_anterior = datetime.combine(
                 hoje.replace(month=hoje.month - 1, day=1), datetime.min.time()
             )
-    except Exception as exc:
-        REFRESH_IN_PROGRESS = False
-        logger.exception("Erro ao preparar datas do dashboard: %s", exc)
-        return jsonify(build_error_payload(f"Erro ao preparar datas do dashboard: {exc}"))
 
-    sql_vendas = """
-    SELECT TMP.HORA, SUM(TMP.TOTALVENDA) AS TOTALVENDA,
-            COUNT(TMP.IDPLANILHA) AS QTDCLIENTES, TMP.PERIODO
-    FROM (
-        SELECT NOTAS.IDEMPRESA, NOTAS.IDPLANILHA,
-               HOUR(NOTAS.DTMOVIMENTO) AS HORA,
-               SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
-                   ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
-                   ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTALVENDA,
-               CASE WHEN ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
-                    THEN 'A' ELSE 'B' END AS PERIODO
-        FROM DBA.NOTAS AS NOTAS
-        INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
-            ON NOTAS.IDEMPRESA = NOTAS_ENTRADA_SAIDA.IDEMPRESA
-           AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
-        INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
-            ON NOTAS_ENTRADA_SAIDA.IDEMPRESA = ESTOQUE_ANALITICO.IDEMPRESA
-           AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
-           AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
-        WHERE NOTAS.FLAGNOTACANCEL = 'F'
-          AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
-          AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
-          AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
-          AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
-                    AND ((ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?)
-                        OR (ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?))
-        GROUP BY NOTAS.IDEMPRESA, NOTAS.IDPLANILHA,
-                 HOUR(NOTAS.DTMOVIMENTO), ESTOQUE_ANALITICO.DTMOVIMENTO
-    ) AS TMP
-    GROUP BY TMP.HORA, TMP.PERIODO
-    ORDER BY TMP.PERIODO, TMP.HORA
-    """
-
-    sql_empresas = """
-        SELECT ESTOQUE_ANALITICO.IDEMPRESA AS IDEMPRESA,
-                     SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
-                             ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
-                             ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTAL_VENDA
-        FROM DBA.NOTAS AS NOTAS
-        INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
+        sql_vendas = """
+        SELECT TMP.HORA, SUM(TMP.TOTALVENDA) AS TOTALVENDA,
+                COUNT(TMP.IDPLANILHA) AS QTDCLIENTES, TMP.PERIODO
+        FROM (
+            SELECT NOTAS.IDEMPRESA, NOTAS.IDPLANILHA,
+                   HOUR(NOTAS.DTMOVIMENTO) AS HORA,
+                   SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
+                       ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
+                       ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTALVENDA,
+                   CASE WHEN ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
+                        THEN 'A' ELSE 'B' END AS PERIODO
+            FROM DBA.NOTAS AS NOTAS
+            INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
                 ON NOTAS.IDEMPRESA = NOTAS_ENTRADA_SAIDA.IDEMPRESA
-             AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
-        INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
+               AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
+            INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
                 ON NOTAS_ENTRADA_SAIDA.IDEMPRESA = ESTOQUE_ANALITICO.IDEMPRESA
-             AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
-             AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
-        WHERE NOTAS.FLAGNOTACANCEL = 'F'
-            AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
-            AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
-            AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
-            AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
-            AND ESTOQUE_ANALITICO.DTMOVIMENTO >= ?
-            AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
-        GROUP BY ESTOQUE_ANALITICO.IDEMPRESA
-        ORDER BY TOTAL_VENDA DESC
+               AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
+               AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
+            WHERE NOTAS.FLAGNOTACANCEL = 'F'
+              AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
+              AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
+              AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
+              AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
+                        AND ((ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?)
+                            OR (ESTOQUE_ANALITICO.DTMOVIMENTO >= ? AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?))
+            GROUP BY NOTAS.IDEMPRESA, NOTAS.IDPLANILHA,
+                     HOUR(NOTAS.DTMOVIMENTO), ESTOQUE_ANALITICO.DTMOVIMENTO
+        ) AS TMP
+        GROUP BY TMP.HORA, TMP.PERIODO
+        ORDER BY TMP.PERIODO, TMP.HORA
         """
 
-    sql_empresas_mes = """
-        SELECT ESTOQUE_ANALITICO.IDEMPRESA AS IDEMPRESA,
-                     SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
-                             ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
-                             ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTAL_VENDA
-        FROM DBA.NOTAS AS NOTAS
-        INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
-                ON NOTAS.IDEMPRESA = NOTAS_ENTRADA_SAIDA.IDEMPRESA
-             AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
-        INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
-                ON NOTAS_ENTRADA_SAIDA.IDEMPRESA = ESTOQUE_ANALITICO.IDEMPRESA
-             AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
-             AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
-        WHERE NOTAS.FLAGNOTACANCEL = 'F'
-            AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
-            AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
-            AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
-            AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
-            AND ESTOQUE_ANALITICO.DTMOVIMENTO >= ?
-            AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
-        GROUP BY ESTOQUE_ANALITICO.IDEMPRESA
-        ORDER BY TOTAL_VENDA DESC
-        """
+        sql_empresas = """
+            SELECT ESTOQUE_ANALITICO.IDEMPRESA AS IDEMPRESA,
+                         SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
+                                 ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
+                                 ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTAL_VENDA
+            FROM DBA.NOTAS AS NOTAS
+            INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
+                    ON NOTAS.IDEMPRESA = NOTAS_ENTRADA_SAIDA.IDEMPRESA
+                 AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
+            INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
+                    ON NOTAS_ENTRADA_SAIDA.IDEMPRESA = ESTOQUE_ANALITICO.IDEMPRESA
+                 AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
+                 AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
+            WHERE NOTAS.FLAGNOTACANCEL = 'F'
+                AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
+                AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
+                AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
+                AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
+                AND ESTOQUE_ANALITICO.DTMOVIMENTO >= ?
+                AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
+            GROUP BY ESTOQUE_ANALITICO.IDEMPRESA
+            ORDER BY TOTAL_VENDA DESC
+            """
 
-    try:
+        sql_empresas_mes = """
+            SELECT ESTOQUE_ANALITICO.IDEMPRESA AS IDEMPRESA,
+                         SUM(CASE WHEN NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO = 'E' THEN
+                                 ESTOQUE_ANALITICO.VALTOTLIQUIDO * (-1)
+                                 ELSE ESTOQUE_ANALITICO.VALTOTLIQUIDO END) AS TOTAL_VENDA
+            FROM DBA.NOTAS AS NOTAS
+            INNER JOIN DBA.NOTAS_ENTRADA_SAIDA AS NOTAS_ENTRADA_SAIDA
+                    ON NOTAS.IDEMPRESA = NOTAS_ENTRADA_SAIDA.IDEMPRESA
+                 AND NOTAS.IDPLANILHA = NOTAS_ENTRADA_SAIDA.IDPLANILHA
+            INNER JOIN DBA.ESTOQUE_ANALITICO AS ESTOQUE_ANALITICO
+                    ON NOTAS_ENTRADA_SAIDA.IDEMPRESA = ESTOQUE_ANALITICO.IDEMPRESA
+                 AND NOTAS_ENTRADA_SAIDA.IDPLANILHA = ESTOQUE_ANALITICO.IDPLANILHA
+                 AND NOTAS_ENTRADA_SAIDA.DTMOVIMENTO = ESTOQUE_ANALITICO.DTMOVIMENTO
+            WHERE NOTAS.FLAGNOTACANCEL = 'F'
+                AND NOTAS_ENTRADA_SAIDA.FLAGMOVPRODUTOS = 'T'
+                AND (ESTOQUE_ANALITICO.NUMSEQUENCIAKIT IS NULL OR ESTOQUE_ANALITICO.NUMSEQUENCIAKIT <= 0)
+                AND NOTAS_ENTRADA_SAIDA.TIPOMOVIMENTO IN ('V', 'E')
+                AND ESTOQUE_ANALITICO.IDOPERACAO <> 1301
+                AND ESTOQUE_ANALITICO.DTMOVIMENTO >= ?
+                AND ESTOQUE_ANALITICO.DTMOVIMENTO < ?
+            GROUP BY ESTOQUE_ANALITICO.IDEMPRESA
+            ORDER BY TOTAL_VENDA DESC
+            """
+
         stmt_vendas = ibm_db.prepare(conn, sql_vendas)
         ibm_db.execute(stmt_vendas, (dt_ini_1, dt_fim_1, dt_ini_1, dt_fim_1, dt_ini_2, dt_fim_2))
         linhas_vendas = []
@@ -404,26 +395,6 @@ def dashboard():
         except Exception as margem_exc:
             logger.warning("Não foi possível calcular margem de lucro direta: %s", margem_exc)
 
-        ibm_db.close(conn)
-    except Exception as exc:
-        try:
-            db2_message = ibm_db.conn_errormsg(conn)
-        except Exception:
-            db2_message = ""
-        message = f"Falha ao executar SQL: {exc}. DB2: {db2_message}".strip()
-        logger.exception(message)
-        try:
-            ibm_db.close(conn)
-        except Exception:
-            pass
-        REFRESH_IN_PROGRESS = False
-        if cache:
-            cache["status"] = "cache"
-            cache["message"] = message
-            return jsonify(cache)
-        return jsonify(build_error_payload(message))
-
-    try:
         vendas_por_hora = [0.0 for _ in range(24)]
         total_vendido = 0.0
         total_ontem = 0.0
@@ -495,9 +466,44 @@ def dashboard():
         }
 
         save_cache(resposta)
-        return jsonify(resposta)
+        return resposta
+    except Exception as exc:
+        try:
+            db2_message = ibm_db.conn_errormsg(conn)
+        except Exception:
+            db2_message = ""
+        message = f"Falha ao executar SQL: {exc}. DB2: {db2_message}".strip()
+        logger.exception(message)
+        try:
+            ibm_db.close(conn)
+        except Exception:
+            pass
+        if cache:
+            cache["status"] = "cache"
+            cache["message"] = message
+            return cache
+        return build_error_payload(message)
     finally:
         REFRESH_IN_PROGRESS = False
+
+
+@app.route("/api/dashboard")
+def dashboard():
+    if request.method == "OPTIONS":
+        return "", 200
+    return jsonify(refresh_dashboard_cache_once())
+
+
+def background_cache_worker():
+    while True:
+        try:
+            refresh_dashboard_cache_once()
+        except Exception as exc:
+            logger.exception("Erro no worker de cache em segundo plano: %s", exc)
+        time.sleep(5)
+
+
+threading.Thread(target=background_cache_worker, daemon=True).start()
 
 
 if __name__ == "__main__":
