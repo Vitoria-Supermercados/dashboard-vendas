@@ -350,6 +350,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  atualizarDashboard();
-  setInterval(atualizarDashboard, 5000);
+  async function cicloDashboard() {
+    while (true) {
+      await atualizarDashboard();
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+  }
+
+  cicloDashboard();
 });
