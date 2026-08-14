@@ -294,7 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let timeout;
     try {
       controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 8000);
+      timeout = setTimeout(() => controller.abort(), 5000);
       const resposta = await fetch(`${API_BASE_URL}/api/dashboard?ts=${Date.now()}`, {
         signal: controller.signal,
         cache: "no-store"
@@ -350,13 +350,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function agendarProximaAtualizacao() {
-    setTimeout(async () => {
-      await atualizarDashboard();
-      agendarProximaAtualizacao();
-    }, 5000);
-  }
-
   atualizarDashboard();
-  agendarProximaAtualizacao();
+  setInterval(atualizarDashboard, 2000);
 });
