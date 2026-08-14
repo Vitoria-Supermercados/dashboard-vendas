@@ -40,8 +40,9 @@ DATABASE = os.getenv("DB_NAME", "VITORIA")
 USERNAME = os.getenv("DB_USER", "vitoria")
 PASSWORD = os.getenv("DB_PASSWORD", "")
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "cache_vendas.json")
-CACHE_TTL_SECONDS = 15
+CACHE_TTL_SECONDS = 10
 TTL_SECONDS = 0
+REFRESH_IN_PROGRESS = False
 EMPRESAS = {
     3: "Torquato",
     4: "Grande Circular",
@@ -183,11 +184,20 @@ def dashboard():
     if request.method == "OPTIONS":
         return "", 200
 
+    global REFRESH_IN_PROGRESS
+
     cache = load_cache()
     if cache and cache_is_fresh():
         cache["status"] = "cache"
-        cache["message"] = "Dados em cache: atualizado há menos de 15 segundos."
+        cache["message"] = "Dados em cache: atualizado há menos de 30 segundos."
         return jsonify(cache)
+
+    if REFRESH_IN_PROGRESS:
+        if cache:
+            cache["status"] = "cache"
+            cache["message"] = "Atualização já em andamento; servindo cache anterior."
+            return jsonify(cache)
+        return jsonify(build_empty_payload())
 
     if ibm_db is None:
         payload = build_empty_payload()
@@ -197,11 +207,13 @@ def dashboard():
             return jsonify(cache)
         return jsonify(payload)
 
+    REFRESH_IN_PROGRESS = True
     try:
         # Tenta conectar ao DB2 com timeout de 10 segundos
         conn_str = f"DATABASE={DATABASE};HOSTNAME={HOST};PORT={PORT};PROTOCOL=TCPIP;UID={USERNAME};PWD={PASSWORD};"
         conn = connect_db_with_timeout(conn_str, timeout_seconds=10)
     except Exception as exc:
+        REFRESH_IN_PROGRESS = False
         message = f"Falha ao conectar ao banco: {exc}"
         logger.exception(message)
         if cache:
@@ -210,7 +222,8 @@ def dashboard():
             return jsonify(cache)
         return jsonify(build_error_payload(message))
 
-    hoje = datetime.now().date()
+    try:
+        hoje = datetime.now().date()
     ontem = hoje - timedelta(days=1)
     dt_ini_1 = datetime.combine(hoje, datetime.min.time())
     dt_fim_1 = datetime.combine(hoje + timedelta(days=1), datetime.min.time())
@@ -399,13 +412,15 @@ def dashboard():
             ibm_db.close(conn)
         except Exception:
             pass
+        REFRESH_IN_PROGRESS = False
         if cache:
             cache["status"] = "cache"
             cache["message"] = message
             return jsonify(cache)
         return jsonify(build_error_payload(message))
 
-    vendas_por_hora = [0.0 for _ in range(24)]
+    try:
+        vendas_por_hora = [0.0 for _ in range(24)]
     total_vendido = 0.0
     total_ontem = 0.0
     transacoes = 0
@@ -475,8 +490,10 @@ def dashboard():
         "empresas_mes": empresas_mes,
     }
 
-    save_cache(resposta)
-    return jsonify(resposta)
+        save_cache(resposta)
+        return jsonify(resposta)
+    finally:
+        REFRESH_IN_PROGRESS = False
 
 
 if __name__ == "__main__":
