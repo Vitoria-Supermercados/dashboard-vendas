@@ -425,74 +425,74 @@ def dashboard():
 
     try:
         vendas_por_hora = [0.0 for _ in range(24)]
-    total_vendido = 0.0
-    total_ontem = 0.0
-    transacoes = 0
-    maior_valor = 0.0
-    horario_pico = "00:00"
+        total_vendido = 0.0
+        total_ontem = 0.0
+        transacoes = 0
+        maior_valor = 0.0
+        horario_pico = "00:00"
 
-    for linha in linhas_vendas:
-        hora = int(linha.get("HORA_VENDA") or 0)
-        valor = parse_db_number(linha.get("TOTAL_VENDA"))
-        if linha.get("PERIODO") == "A":
-            vendas_por_hora[hora] += valor
-            total_vendido += valor
-            transacoes += int(linha.get("QTD_CLIENTES") or 0)
-            if vendas_por_hora[hora] > maior_valor:
-                maior_valor = vendas_por_hora[hora]
-                horario_pico = f"{hora:02d}:00"
+        for linha in linhas_vendas:
+            hora = int(linha.get("HORA_VENDA") or 0)
+            valor = parse_db_number(linha.get("TOTAL_VENDA"))
+            if linha.get("PERIODO") == "A":
+                vendas_por_hora[hora] += valor
+                total_vendido += valor
+                transacoes += int(linha.get("QTD_CLIENTES") or 0)
+                if vendas_por_hora[hora] > maior_valor:
+                    maior_valor = vendas_por_hora[hora]
+                    horario_pico = f"{hora:02d}:00"
+            else:
+                total_ontem += valor
+
+        ticket_medio = total_vendido / transacoes if transacoes else 0.0
+        variacao = ((total_vendido - total_ontem) / total_ontem * 100) if total_ontem else 0.0
+        texto_variacao = f"{'↑' if variacao >= 0 else '↓'} {abs(variacao):.1f}% vs. ontem"
+        if margem_calculada and total_venda_lucro:
+            margem = (total_lucro / total_venda_lucro) * 100
+            texto_margem = f"{'↑' if margem >= 0 else '↓'} {abs(margem):.1f}%"
         else:
-            total_ontem += valor
+            texto_margem = "N/D"
 
-    ticket_medio = total_vendido / transacoes if transacoes else 0.0
-    variacao = ((total_vendido - total_ontem) / total_ontem * 100) if total_ontem else 0.0
-    texto_variacao = f"{'↑' if variacao >= 0 else '↓'} {abs(variacao):.1f}% vs. ontem"
-    if margem_calculada and total_venda_lucro:
-        margem = (total_lucro / total_venda_lucro) * 100
-        texto_margem = f"{'↑' if margem >= 0 else '↓'} {abs(margem):.1f}%"
-    else:
-        texto_margem = "N/D"
+        valores_empresas = {
+            int(linha["IDEMPRESA"]): parse_db_number(linha["TOTAL_VENDA"])
+            for linha in linhas_empresas
+        }
+        empresas = [
+            {"id": id_empresa, "nome": nome, "valor": valores_empresas.get(id_empresa, 0.0)}
+            for id_empresa, nome in EMPRESAS.items()
+        ]
+        empresas.sort(key=lambda empresa: empresa["valor"], reverse=True)
 
-    valores_empresas = {
-        int(linha["IDEMPRESA"]): parse_db_number(linha["TOTAL_VENDA"])
-        for linha in linhas_empresas
-    }
-    empresas = [
-        {"id": id_empresa, "nome": nome, "valor": valores_empresas.get(id_empresa, 0.0)}
-        for id_empresa, nome in EMPRESAS.items()
-    ]
-    empresas.sort(key=lambda empresa: empresa["valor"], reverse=True)
+        valores_empresas_mes = {
+            int(linha["IDEMPRESA"]): parse_db_number(linha["TOTAL_VENDA"])
+            for linha in linhas_empresas_mes
+        }
+        empresas_mes = [
+            {"id": id_empresa, "nome": nome, "valor": valores_empresas_mes.get(id_empresa, 0.0)}
+            for id_empresa, nome in EMPRESAS.items()
+        ]
+        empresas_mes.sort(key=lambda empresa: empresa["valor"], reverse=True)
 
-    valores_empresas_mes = {
-        int(linha["IDEMPRESA"]): parse_db_number(linha["TOTAL_VENDA"])
-        for linha in linhas_empresas_mes
-    }
-    empresas_mes = [
-        {"id": id_empresa, "nome": nome, "valor": valores_empresas_mes.get(id_empresa, 0.0)}
-        for id_empresa, nome in EMPRESAS.items()
-    ]
-    empresas_mes.sort(key=lambda empresa: empresa["valor"], reverse=True)
-
-    resposta = {
-        "status": "success",
-        "timestamp": datetime.now().strftime("%H:%M:%S"),
-        "kpis": {
-            "total_vendido": format_currency(total_vendido),
-            "horario_pico": f"{horario_pico} ({format_currency(maior_valor)})",
-            "transacoes": f"{transacoes:,}".replace(",", "."),
-            "ticket_medio": format_currency(ticket_medio),
-            "margem_lucro": texto_margem,
-            "comparativo": texto_variacao,
-            "total_vendido_mes_atual": format_currency(total_vendido_mes_atual),
-            "total_vendido_mes_anterior": format_currency(total_vendido_mes_anterior),
-        },
-        "grafico": {
-            "categorias": [f"{h:02d}h" for h in range(24)],
-            "valores": vendas_por_hora,
-        },
-        "empresas": empresas,
-        "empresas_mes": empresas_mes,
-    }
+        resposta = {
+            "status": "success",
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "kpis": {
+                "total_vendido": format_currency(total_vendido),
+                "horario_pico": f"{horario_pico} ({format_currency(maior_valor)})",
+                "transacoes": f"{transacoes:,}".replace(",", "."),
+                "ticket_medio": format_currency(ticket_medio),
+                "margem_lucro": texto_margem,
+                "comparativo": texto_variacao,
+                "total_vendido_mes_atual": format_currency(total_vendido_mes_atual),
+                "total_vendido_mes_anterior": format_currency(total_vendido_mes_anterior),
+            },
+            "grafico": {
+                "categorias": [f"{h:02d}h" for h in range(24)],
+                "valores": vendas_por_hora,
+            },
+            "empresas": empresas,
+            "empresas_mes": empresas_mes,
+        }
 
         save_cache(resposta)
         return jsonify(resposta)
