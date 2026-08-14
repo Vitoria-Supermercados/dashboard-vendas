@@ -294,7 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let timeout;
     try {
       controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 5000);
+      timeout = setTimeout(() => controller.abort(), 4000);
       const resposta = await fetch(`${API_BASE_URL}/api/dashboard?ts=${Date.now()}`, {
         signal: controller.signal,
         cache: "no-store"
@@ -351,5 +351,5 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   atualizarDashboard();
-  setInterval(atualizarDashboard, 2000);
+  setInterval(atualizarDashboard, 5000);
 });
